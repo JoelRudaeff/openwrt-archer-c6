@@ -1,0 +1,35 @@
+#!/bin/sh
+# Status + "keep on today" override for /carwifi.html (reachable only after port knocking).
+# GET: JSON status. POST body "on": keep CAR-SSID on until midnight. POST body "off": back to schedule.
+# POSTs must use Content-Type application/x-carwifi (other websites can't send that cross-origin
+# without a CORS preflight, which this script never approves) and, if present, our own Origin.
+OVR=/etc/carwifi-override
+today=$(date +%F)
+
+if [ "$REQUEST_METHOD" = POST ]; then
+	if [ "$CONTENT_TYPE" != application/x-carwifi ] || { [ -n "$HTTP_ORIGIN" ] && [ "$HTTP_ORIGIN" != "https://$HTTP_HOST" ]; }; then
+		printf 'Status: 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nforbidden\n'; exit 0
+	fi
+	body=$(head -c "${CONTENT_LENGTH:-0}")
+	case "$body" in
+		on)  echo "$today" > $OVR; logger -t carwifi "override: keep on today ($today)" ;;
+		off) rm -f $OVR; logger -t carwifi "override cleared, back to schedule" ;;
+	esac
+	/etc/carwifi.sh
+	sleep 3
+fi
+
+wd=$(date +%w)
+if [ "$wd" -le 4 ]; then off_end=19:00; else off_end=11:30; fi
+sched=$(/etc/carwifi.sh "$wd" "$(date +%H%M)"); sched=${sched##*-> }
+ovr=false; [ "$(cat $OVR 2>/dev/null)" = "$today" ] && ovr=true
+radio=$(ubus call network.wireless status | jsonfilter -e '@.radio1.up')
+clients=$(iwinfo phy1-ap0 assoclist 2>/dev/null | grep -cE '^[0-9A-F]{2}:')
+# Last Tessie answer (home/away/unknown) if from the last 65 min (asked hourly); empty = not checked lately
+tessie=false; [ -r /etc/tessie.conf ] && tessie=true
+tv=false; uci -q get wireless.tv >/dev/null && [ "$(uci -q get wireless.tv.disabled)" != 1 ] && tv=true
+car=; read c ct 2>/dev/null < /tmp/carwifi-home && [ $(( $(date +%s) - ${ct:-0} )) -lt 3900 ] && car=$c
+
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+printf '{"date":"%s","time":"%s","weekday":%s,"off_start":"09:00","off_end":"%s","scheduled":"%s","override":%s,"radio_up":%s,"clients":%s,"tessie":%s,"car":"%s","tv":%s}\n' \
+	"$today" "$(date +%H:%M)" "$wd" "$off_end" "$sched" "$ovr" "${radio:-false}" "${clients:-0}" "$tessie" "$car" "$tv"

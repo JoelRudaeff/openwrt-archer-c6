@@ -1,0 +1,4 @@
+# real secrets live on the router only
+tessie.conf
+*.tar.gz
+*.bin

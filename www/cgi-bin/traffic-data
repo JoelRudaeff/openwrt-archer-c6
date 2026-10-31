@@ -1,0 +1,6 @@
+#!/bin/sh
+# Serves the collector's JSON to traffic.html (reachable only after port knocking).
+echo "Content-Type: application/json"
+echo "Cache-Control: no-store"
+echo
+cat /tmp/traffic.json 2>/dev/null || echo '{}'

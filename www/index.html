@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Archer Control</title>
+<!-- Replaces luci-base's /www/index.html (a redirect to LuCI). LuCI itself stays at /cgi-bin/luci/. -->
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --hover: rgba(11,11,11,0.04);
+  --track: #c3c2b7; --accent: #2a78d6; --good: #006300;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
+    --track: #383835; --accent: #3987e5; --good: #0ca30c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
+  --track: #383835; --accent: #3987e5; --good: #0ca30c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink); display: flex; flex-direction: column;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+/* top bar */
+header { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--ring); }
+.bar { max-width: 1040px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 16px; margin-right: auto; }
+nav { display: flex; gap: 4px; }
+nav a { color: var(--ink-2); text-decoration: none; padding: 6px 12px; border-radius: 8px; font-weight: 500; }
+nav a:hover { background: var(--hover); }
+nav a[aria-current="page"] { background: var(--ink); color: var(--surface); }
+
+section[hidden] { display: none !important; }
+main { max-width: 1040px; width: 100%; margin: 0 auto; padding: 24px 16px 48px; }
+main.narrow { max-width: 512px; }
+h1 { font-size: 20px; margin: 0 0 2px; }
+h2 { font-size: 15px; margin: 0 0 12px; }
+.sub { color: var(--ink-2); font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+
+/* traffic */
+.bar-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin: 20px 0 16px; }
+.seg { display: inline-flex; border: 1px solid var(--ring); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: none; color: var(--ink-2); font: inherit; padding: 6px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 12px 14px; }
+.tile .k { color: var(--ink-2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.tile .v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+.tbl-wrap { overflow-x: auto; }
+table.clients { width: 100%; border-collapse: collapse; min-width: 720px; }
+.clients th, .clients td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.clients th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.clients th:first-child, .clients td:first-child { text-align: left; }
+.clients tbody tr { cursor: pointer; }
+.clients tbody tr:hover { background: var(--hover); }
+.clients tbody tr[aria-selected="true"] { box-shadow: inset 3px 0 0 var(--ink); }
+.name { font-weight: 600; }
+.mac { color: var(--ink-2); font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.mini { display: flex; gap: 2px; height: 6px; width: 120px; margin-left: auto; margin-top: 4px; }
+.mini span { border-radius: 2px; min-width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--ink-2); font-size: 12px; margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: 240px; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); display: none; min-width: 170px; }
+.tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.empty { color: var(--ink-2); padding: 24px 0; text-align: center; }
+.note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+/* car wi-fi */
+.status { display: flex; align-items: center; gap: 12px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--track); flex: none; }
+.dot.on { background: var(--good); box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 20%, transparent); }
+.big { font-size: 22px; font-weight: 600; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.switch-row .label { font-weight: 600; font-size: 15px; }
+.switch-row .hint { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+.switch { position: relative; width: 56px; height: 32px; flex: none; border: 0; padding: 0; border-radius: 999px;
+  background: var(--track); cursor: pointer; transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s; }
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(24px); }
+.switch:disabled { opacity: .5; cursor: wait; }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; }
+dt { color: var(--ink-2); }
+dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.week { width: 100%; border-collapse: collapse; font-size: 13px; }
+.week td { padding: 6px 0; border-bottom: 1px solid var(--grid); }
+.week td:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.week tr.today td { font-weight: 600; color: var(--ink); }
+.err { color: var(--ink-2); font-size: 13px; margin-top: 10px; }
+.err:empty { display: none; }
+
+/* luci */
+#luci { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#luci .luci-bar { max-width: 1040px; width: 100%; margin: 0 auto; padding: 6px 16px; text-align: right; font-size: 12px; }
+#luci .luci-bar a { color: var(--accent); }
+#luci iframe { flex: 1; width: 100%; border: 0; border-top: 1px solid var(--ring); min-height: 480px; background: var(--page); }
+
+@media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } .brand { width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">Archer C6</div>
+    <nav>
+      <a href="#traffic" data-tab="traffic">Traffic</a>
+      <a href="#wifi" data-tab="wifi">Car Wi-Fi</a>
+      <a href="#luci" data-tab="luci">LuCI</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ========== Traffic ========== -->
+<section id="traffic" hidden>
+<main>
+  <h1>Car Wi-Fi traffic</h1>
+  <div class="sub" id="t-status">Loading…</div>
+  <div class="bar-row">
+    <div class="seg" role="group" aria-label="Period" id="range">
+      <button data-r="1" aria-pressed="false">Today</button>
+      <button data-r="7" aria-pressed="true">7 days</button>
+      <button data-r="30" aria-pressed="false">30 days</button>
+      <button data-r="0" aria-pressed="false">All time</button>
+    </div>
+    <div class="sub">↓ to the client · ↑ from the client</div>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <div class="card">
+    <h2>By client</h2>
+    <div class="tbl-wrap"><table class="clients">
+      <thead><tr>
+        <th>Client</th><th>IP</th><th>Last active</th>
+        <th>Internet ↓</th><th>Internet ↑</th><th>Home ↓</th><th>Home ↑</th><th>Total</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <div class="note">Click a client to show its daily history below. Internet = outside your home; Home = devices on 192.168.1.x, including the main router.</div>
+  </div>
+  <div class="card">
+    <h2 id="chart-title">Daily traffic, last 30 days</h2>
+    <div class="legend" id="legend"></div>
+    <div class="chart" id="chart"><svg id="svg" role="img" aria-label="Daily traffic stacked bar chart"></svg><div class="tip" id="tip"></div></div>
+  </div>
+</main>
+</section>
+
+<!-- ========== Car Wi-Fi ========== -->
+<section id="wifi" hidden>
+<main class="narrow">
+  <h1>Car Wi-Fi</h1>
+  <div class="sub" id="w-sub">CAR-SSID · loading…</div>
+  <div class="card" style="margin-top:16px">
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <div><div class="big" id="state">…</div><div class="sub" id="why"></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="switch-row">
+      <div>
+        <div class="label" id="sw-label">Keep on today</div>
+        <div class="hint">Ignores today's off period. The normal schedule resumes at midnight.</div>
+      </div>
+      <button class="switch" id="sw" role="switch" aria-checked="false" aria-labelledby="sw-label" disabled></button>
+    </div>
+    <div class="err" id="err" role="status"></div>
+  </div>
+  <div class="card">
+    <dl>
+      <dt>Today's off period</dt><dd id="today-off">…</dd>
+      <dt>TV Wi-Fi (TV-SSID, 5 GHz)</dt><dd id="w-tv">…</dd>
+      <dt>Tesla (Tessie)</dt><dd id="w-car">…</dd>
+      <dt>Devices connected</dt><dd id="w-clients">…</dd>
+      <dt>Router time</dt><dd id="w-time">…</dd>
+    </dl>
+  </div>
+  <div class="card"><table class="week" id="week"></table></div>
+</main>
+</section>
+
+<!-- ========== LuCI ========== -->
+<section id="luci" hidden>
+  <div class="luci-bar"><a href="/cgi-bin/luci/" target="_blank" rel="noopener">Open LuCI in its own tab ↗</a></div>
+  <iframe id="luci-frame" title="LuCI"></iframe>
+</section>
+
+<script>
+/* ---------- tabs ---------- */
+const TABS = ['traffic', 'wifi', 'luci'];
+const onShow = {};
+function route() {
+  const tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'traffic';
+  TABS.forEach(t => document.getElementById(t).hidden = t !== tab);
+  document.querySelectorAll('nav a').forEach(a => a.dataset.tab === tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
+  document.title = { traffic: 'Traffic', wifi: 'Car Wi-Fi', luci: 'LuCI' }[tab] + ' · Archer C6';
+  onShow[tab] && onShow[tab]();
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- traffic ---------- */
+(() => {
+  const SERIES = [
+    { key: 'out_down', label: 'Internet ↓', color: 'var(--s1)' },
+    { key: 'out_up',   label: 'Internet ↑', color: 'var(--s2)' },
+    { key: 'in_down',  label: 'Home ↓',     color: 'var(--s3)' },
+    { key: 'in_up',    label: 'Home ↑',     color: 'var(--s4)' },
+  ];
+  let data = null, range = 7, selected = null;
+
+  const fmt = b => {
+    if (!b) return '0 B';
+    const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
+    while (b >= 1000 && i < u.length - 1) { b /= 1000; i++; }
+    return (b >= 100 || i === 0 ? b.toFixed(0) : b.toFixed(1)) + ' ' + u[i];
+  };
+  const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const daysBack = n => { const out = []; const d = new Date(); for (let i = n - 1; i >= 0; i--) { const x = new Date(d); x.setDate(d.getDate() - i); out.push(iso(x)); } return out; };
+  const ago = t => { const s = Date.now() / 1000 - t; if (s < 600) return 'now'; if (s < 3600) return Math.round(s / 60) + ' min ago'; if (s < 86400) return Math.round(s / 3600) + ' h ago'; return Math.round(s / 86400) + ' d ago'; };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function sumFor(c) {
+    const t = { out_down: 0, out_up: 0, in_down: 0, in_up: 0 };
+    if (range === 0) { for (const s of SERIES) t[s.key] = c.total[s.key] || 0; return t; }
+    const keep = new Set(daysBack(range));
+    for (const [d, v] of Object.entries(c.days || {})) if (keep.has(d)) for (const s of SERIES) t[s.key] += v[s.key] || 0;
+    return t;
+  }
+
+  function render() {
+    const clients = Object.entries(data.clients || {}).map(([mac, c]) => ({ mac, c, t: sumFor(c) }));
+    clients.forEach(x => x.total = SERIES.reduce((a, s) => a + x.t[s.key], 0));
+    clients.sort((a, b) => b.total - a.total);
+    const all = { out_down: 0, out_up: 0, in_down: 0, in_up: 0 };
+    clients.forEach(x => SERIES.forEach(s => all[s.key] += x.t[s.key]));
+    document.getElementById('tiles').innerHTML = SERIES.map(s =>
+      `<div class="tile"><div class="k"><i class="sw" style="background:${s.color}"></i>${s.label}</div><div class="v num">${fmt(all[s.key])}</div></div>`).join('');
+    const rows = document.getElementById('rows');
+    if (!clients.length) rows.innerHTML = '<tr><td colspan="8" class="empty">No client traffic recorded yet. Data appears within 5 minutes of a client using the network.</td></tr>';
+    else rows.innerHTML = clients.map(x => {
+      const name = (data.names || {})[x.mac];
+      const mini = x.total ? SERIES.map(s => x.t[s.key] ? `<span style="flex:${x.t[s.key]};background:${s.color}"></span>` : '').join('') : '';
+      return `<tr data-mac="${esc(x.mac)}" aria-selected="${x.mac === selected}">
+        <td>${name ? `<div class="name">${esc(name)}</div>` : ''}<div class="mac">${esc(x.mac)}</div></td>
+        <td class="num">${esc(x.c.ip || '')}</td><td>${x.c.last_seen ? ago(x.c.last_seen) : ''}</td>
+        ${SERIES.map(s => `<td class="num">${fmt(x.t[s.key])}</td>`).join('')}
+        <td class="num"><b>${fmt(x.total)}</b><div class="mini">${mini}</div></td></tr>`;
+    }).join('');
+    rows.querySelectorAll('tr[data-mac]').forEach(tr => tr.onclick = () => { selected = selected === tr.dataset.mac ? null : tr.dataset.mac; render(); });
+    drawChart();
+  }
+
+  function drawChart() {
+    const svg = document.getElementById('svg');
+    if (!data || !svg.clientWidth) return;
+    const days = daysBack(30);
+    const macs = selected ? [selected] : Object.keys(data.clients || {});
+    const name = selected ? ((data.names || {})[selected] || selected) : 'all clients';
+    document.getElementById('chart-title').textContent = `Daily traffic, last 30 days, ${name}`;
+    const vals = days.map(d => {
+      const v = { d, out_down: 0, out_up: 0, in_down: 0, in_up: 0 };
+      macs.forEach(m => { const x = (data.clients[m].days || {})[d]; if (x) SERIES.forEach(s => v[s.key] += x[s.key] || 0); });
+      v.total = SERIES.reduce((a, s) => a + v[s.key], 0); return v;
+    });
+    const W = svg.clientWidth, H = 240, L = 64, R = 8, T = 8, B = 24;
+    const max = Math.max(1, ...vals.map(v => v.total));
+    const step = Math.pow(10, Math.floor(Math.log10(max))); const nice = [1, 2, 2.5, 5, 10].map(m => m * step).find(m => m >= max / 4) || step;
+    const top = Math.ceil(max / nice) * nice;
+    const y = b => T + (H - T - B) * (1 - b / top);
+    const slot = (W - L - R) / days.length, bw = Math.max(4, Math.min(22, slot * 0.64));
+    let g = '';
+    for (let v = 0; v <= top + 1e-9; v += nice)
+      g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? 'var(--axis)' : 'var(--grid)'}" stroke-width="1"/>` +
+           `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${fmt(v)}</text>`;
+    vals.forEach((v, i) => {
+      const x = L + i * slot + (slot - bw) / 2;
+      let base = 0; const segs = SERIES.filter(s => v[s.key] > 0);
+      segs.forEach((s, j) => {
+        const y0 = y(base), y1 = y(base + v[s.key]); base += v[s.key];
+        const h = Math.max(1, y0 - y1 - (j < segs.length - 1 ? 2 : 0));
+        const r = Math.min(4, h, bw / 2);
+        g += j === segs.length - 1
+          ? `<path d="M${x},${y0} V${y0 - h + r} Q${x},${y0 - h} ${x + r},${y0 - h} H${x + bw - r} Q${x + bw},${y0 - h} ${x + bw},${y0 - h + r} V${y0} Z" fill="${s.color}"/>`
+          : `<rect x="${x}" y="${y0 - h}" width="${bw}" height="${h}" fill="${s.color}"/>`;
+      });
+      if (i % 5 === 4 || i === days.length - 1)
+        g += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--muted)">${v.d.slice(8)}/${v.d.slice(5, 7)}</text>`;
+      g += `<rect class="hit" data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent"/>`;
+    });
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.innerHTML = g;
+    const tip = document.getElementById('tip'), box = document.getElementById('chart');
+    svg.querySelectorAll('.hit').forEach(r => {
+      r.onmousemove = e => {
+        const v = vals[+r.dataset.i];
+        tip.innerHTML = `<div style="font-weight:600;margin-bottom:4px">${v.d}</div>` +
+          SERIES.slice().reverse().map(s => `<div class="row"><span><i class="sw" style="background:${s.color}"></i>${s.label}</span><span class="num">${fmt(v[s.key])}</span></div>`).join('') +
+          `<div class="row" style="border-top:1px solid var(--grid);margin-top:4px;padding-top:4px"><span>Total</span><span class="num"><b>${fmt(v.total)}</b></span></div>`;
+        tip.style.display = 'block';
+        const b = box.getBoundingClientRect(); let lx = e.clientX - b.left + 12;
+        if (lx + tip.offsetWidth > b.width) lx = e.clientX - b.left - tip.offsetWidth - 12;
+        tip.style.left = lx + 'px'; tip.style.top = Math.max(0, e.clientY - b.top - tip.offsetHeight / 2) + 'px';
+        r.setAttribute('fill', 'var(--hover)');
+      };
+      r.onmouseleave = () => { tip.style.display = 'none'; r.setAttribute('fill', 'transparent'); };
+    });
+  }
+
+  document.getElementById('legend').innerHTML = SERIES.map(s => `<span><i class="sw" style="background:${s.color}"></i>${s.label}</span>`).join('');
+  document.querySelectorAll('#range button').forEach(b => b.onclick = () => {
+    range = +b.dataset.r;
+    document.querySelectorAll('#range button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    render();
+  });
+  window.addEventListener('resize', drawChart);
+
+  async function load() {
+    try {
+      const r = await fetch('/cgi-bin/traffic-data', { cache: 'no-store' });
+      data = await r.json();
+      if (!data.clients) data.clients = {};
+      const since = data.since ? new Date(data.since * 1000).toLocaleDateString() : '?';
+      document.getElementById('t-status').textContent =
+        `Counting since ${since} · updated ${data.updated ? new Date(data.updated * 1000).toLocaleTimeString() : '?'} · refreshes every minute`;
+      render();
+    } catch (e) {
+      document.getElementById('t-status').textContent = 'Could not load data from the router.';
+    }
+  }
+  onShow.traffic = () => data ? drawChart() : load();
+  setInterval(() => !document.getElementById('traffic').hidden && load(), 60000);
+})();
+
+/* ---------- car wi-fi ---------- */
+(() => {
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const offEnd = d => d <= 4 ? '19:00' : '11:30';
+  const sw = document.getElementById('sw'), err = document.getElementById('err');
+
+  function show(s) {
+    const on = !!s.radio_up;
+    document.getElementById('dot').className = 'dot' + (on ? ' on' : '');
+    document.getElementById('state').textContent = on ? 'Wi-Fi is on' : 'Wi-Fi is off';
+    let why;
+    const home = s.car === 'home';
+    if (s.override) why = s.scheduled === 'off' ? 'Kept on today, overriding the schedule' : 'Kept on for the rest of today';
+    else if (home && s.scheduled === 'off') why = 'On: car is home';
+    else why = s.scheduled === 'off' ? `Off by schedule until ${s.off_end}` : 'On by schedule';
+    if (on !== (s.override || home || s.scheduled === 'on')) why += ' · switching…';
+    document.getElementById('w-tv').textContent = s.tv ? 'On' : 'Off';
+    document.getElementById('w-car').textContent = !s.tessie ? 'Not set up'
+      : { home: 'Parked at home', away: 'Away', unknown: "Unknown (Tessie didn't answer)" }[s.car]
+      || 'Checked hourly during the off period';
+    document.getElementById('why').textContent = why;
+    sw.setAttribute('aria-checked', s.override);
+    sw.disabled = false;
+    document.getElementById('w-sub').textContent = `CAR-SSID · ${DAYS[s.weekday]} ${s.date}`;
+    document.getElementById('today-off').textContent = `${s.off_start}–${s.off_end}`;
+    document.getElementById('w-clients').textContent = s.clients;
+    document.getElementById('w-time').textContent = s.time;
+    document.getElementById('week').innerHTML = DAYS.map((n, i) =>
+      `<tr class="${i === s.weekday ? 'today' : ''}"><td>${n}${i === s.weekday ? ' (today)' : ''}</td><td>off 09:00–${offEnd(i)}</td></tr>`).join('');
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/cgi-bin/carwifi', { cache: 'no-store' });
+      show(await r.json()); err.textContent = '';
+    } catch (e) { err.textContent = 'Could not reach the router.'; }
+  }
+
+  sw.onclick = async () => {
+    const want = sw.getAttribute('aria-checked') !== 'true';
+    sw.disabled = true; sw.setAttribute('aria-checked', want);
+    err.textContent = want ? 'Turning on…' : 'Returning to schedule…';
+    try {
+      const r = await fetch('/cgi-bin/carwifi', { method: 'POST', body: want ? 'on' : 'off',
+        headers: { 'Content-Type': 'application/x-carwifi' } });
+      if (!r.ok) throw new Error(r.status);
+      show(await r.json()); err.textContent = '';
+    } catch (e) { err.textContent = 'Change failed. Try again.'; refresh(); }
+  };
+
+  onShow.wifi = refresh;
+  setInterval(() => !document.getElementById('wifi').hidden && refresh(), 15000);
+})();
+
+/* ---------- luci (loaded on first visit) ---------- */
+onShow.luci = () => { const f = document.getElementById('luci-frame'); if (!f.src) f.src = '/cgi-bin/luci/'; };
+
+route();
+</script>
+</body>
+</html>

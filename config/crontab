@@ -1,0 +1,4 @@
+*/5 * * * * /etc/carwifi.sh
+*/5 * * * * /etc/uplink-watchdog.sh
+0 10 1-7 * * /etc/autoupgrade.sh
+*/5 * * * * /etc/traffic-collect.uc

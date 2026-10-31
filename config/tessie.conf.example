@@ -1,0 +1,6 @@
+# /etc/tessie.conf on the router (chmod 600). Never commit the real one.
+TOKEN=your-tessie-api-token
+VIN=your-vehicle-vin
+HOME_LAT=0.000000
+HOME_LON=0.000000
+RADIUS=100
